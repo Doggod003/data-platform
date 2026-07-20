@@ -14,6 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from data_platform.integrations.zillow import fetch_zhvi
+from data_platform.reporting.dashboard import build_dashboard
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,8 @@ def load(long_df: pd.DataFrame, summary: pd.DataFrame) -> None:
     logger.info(
         "Wrote %s (%d rows) and %s (%d rows)", long_path, len(long_df), summary_path, len(summary)
     )
+    dashboard_path = build_dashboard(summary, long_df, REPORTS_DIR / "pa_housing_dashboard.html")
+    logger.info("Wrote %s", dashboard_path)
 
 
 def run(state: str = "PA") -> pd.DataFrame:
