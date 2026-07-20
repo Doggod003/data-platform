@@ -1,1 +1,55 @@
 # data-platform
+
+Python data & automation project.
+
+## Structure
+
+```
+.
+├── src/data_platform/       # All application code (src layout)
+│   ├── config.py            # Settings from environment / .env
+│   ├── pipelines/           # One module per pipeline (extract/transform/load)
+│   ├── integrations/        # API clients, DB connectors, external services
+│   └── utils/               # Shared helpers (logging, etc.)
+├── notebooks/               # Exploratory analysis (dated, outputs auto-stripped)
+├── sql/                     # Reusable queries, one file each
+├── reports/                 # Generated outputs: charts, Excel, HTML (gitignored)
+├── tests/                   # Mirrors src/ — one test file per module
+├── scripts/                 # One-off / ad-hoc scripts (not part of the package)
+├── data/                    # Local data (gitignored; folders kept via .gitkeep)
+├── docs/                    # Architecture notes, decisions
+└── .github/workflows/       # CI: lint + tests on every push and PR
+```
+
+## Setup
+
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+make install                                        # or: pip install -e ".[dev]"
+cp .env.example .env                                # fill in secrets locally
+```
+
+## Daily commands
+
+```bash
+make format   # auto-format + fix lint issues
+make lint     # check only
+make test     # run test suite with coverage
+make run      # python -m data_platform
+```
+
+## Analyst workflow
+
+1. **Explore** in `notebooks/` (copy `TEMPLATE_eda.ipynb`, date-prefix the name).
+2. **Promote** stable logic into `src/data_platform/` as tested functions —
+   notebooks then just import and call them.
+3. **Automate**: anything you run repeatedly becomes a pipeline in
+   `src/data_platform/pipelines/`, writing outputs to `reports/`.
+4. Notebook outputs are stripped on commit automatically (nbstripout), so
+   diffs stay readable and no data leaks into git history.
+
+## Conventions
+
+- New pipeline = new module in `src/data_platform/pipelines/` (copy `example.py`) + matching test.
+- Secrets only in `.env` (never committed). Add new settings to `config.py`.
+- Work on branches, merge to `main` via pull request; CI must pass.
