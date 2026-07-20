@@ -1,0 +1,38 @@
+name: Monthly Refresh
+
+on:
+  schedule:
+    - cron: "0 12 1 * *"   # 1st of each month, 12:00 UTC
+  workflow_dispatch:        # allows manual runs from the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  refresh-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e .
+      - name: Run pipeline
+        run: python -m data_platform.pipelines.housing
+      - name: Stage site
+        run: |
+          mkdir site
+          cp reports/pa_housing_dashboard.html site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
