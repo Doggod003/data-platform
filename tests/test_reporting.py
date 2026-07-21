@@ -4,7 +4,7 @@ from datetime import date
 
 import pandas as pd
 
-from data_platform.reporting.dashboard import build_dashboard
+from data_platform.reporting.dashboard import build_dashboard, slugify
 from data_platform.reporting.forensic import run_forensic_tests
 from data_platform.reporting.powerbi_export import (
     add_momentum,
@@ -25,6 +25,11 @@ def sample_summary() -> pd.DataFrame:
                 "yoy_pct": 11.8,
                 "growth_5yr_pct": -0.5,
                 "yoy_rank": 2,
+                "population": 7181,
+                "median_income": 48000,
+                "median_age": 51.2,
+                "owner_occupancy_pct": 79.5,
+                "affordability_ratio": 2.89,
             },
             # clean, unremarkable county
             {
@@ -34,6 +39,11 @@ def sample_summary() -> pd.DataFrame:
                 "yoy_pct": 6.0,
                 "growth_5yr_pct": 40.2,
                 "yoy_rank": 10,
+                "population": 270876,
+                "median_income": 61000,
+                "median_age": 40.6,
+                "owner_occupancy_pct": 66.8,
+                "affordability_ratio": 3.75,
             },
             # small base + double-digit YoY
             {
@@ -43,6 +53,11 @@ def sample_summary() -> pd.DataFrame:
                 "yoy_pct": 12.0,
                 "growth_5yr_pct": 15.0,
                 "yoy_rank": 1,
+                "population": 29365,
+                "median_income": 52000,
+                "median_age": 45.9,
+                "owner_occupancy_pct": 74.3,
+                "affordability_ratio": 0.96,
             },
         ]
     )
@@ -96,9 +111,42 @@ def test_build_dashboard_writes_html(tmp_path):
     assert "<script" in content
     assert "pa_housing_summary.csv" in content
     assert "pa_housing_monthly.csv" in content
-    assert 'class="region-link"' in content
+    assert 'class="county-link"' in content
     assert 'id="top-mover-chip"' in content
     assert 'id="trend-card"' in content
+
+
+def test_build_dashboard_has_three_views_and_router(tmp_path):
+    out = build_dashboard(sample_summary(), sample_monthly(), tmp_path / "dash.html")
+    content = out.read_text(encoding="utf-8")
+    assert 'id="view-overview"' in content
+    assert 'id="view-regions"' in content
+    assert 'id="view-county"' in content
+    assert 'data-route="overview"' in content
+    assert 'data-route="regions"' in content
+    assert 'data-route="county"' in content
+    assert "hashchange" in content
+    assert "function route()" in content
+
+
+def test_build_dashboard_renders_a_county_section(tmp_path):
+    out = build_dashboard(sample_summary(), sample_monthly(), tmp_path / "dash.html")
+    content = out.read_text(encoding="utf-8")
+    # Forest County's slug must be embedded so #county/forest-county is reachable
+    assert "forest-county" in content
+    assert "avg_yoy_pct" in content  # proves the REGIONAL blob is embedded too
+
+
+def test_slugify_lowercases_and_hyphenates_spaces():
+    assert slugify("Forest County") == "forest-county"
+
+
+def test_slugify_handles_mixed_case_and_symbols():
+    assert slugify("PA Wilds / Northwest") == "pa-wilds-northwest"
+
+
+def test_slugify_collapses_repeated_separators():
+    assert slugify("  Multiple   Spaces  ") == "multiple-spaces"
 
 
 def test_momentum_labels_cooling_steady_hot():
