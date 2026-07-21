@@ -1,9 +1,12 @@
 """Census ACS 5-year API client for county-level demographics.
 
-Free public API — an optional CENSUS_API_KEY (config.settings) raises the
-rate limit but isn't required. Demographics move slowly, so results are
-cached to disk and only re-fetched when the cache is missing or stale.
-Docs: https://www.census.gov/data/developers/data-sets/acs-5year.html
+CENSUS_API_KEY (config.settings) is required in practice: the Census API
+now returns an HTTP 200 with an HTML "Missing Key" page instead of a JSON
+error when a request lacks one, so fetch_county_demographics() fails loudly
+rather than let that HTML reach the parser. Get a free key at
+https://api.census.gov/data/key_signup.html. Demographics move slowly, so
+results are cached to disk and only re-fetched when the cache is missing or
+stale. Docs: https://www.census.gov/data/developers/data-sets/acs-5year.html
 """
 
 import logging
@@ -62,7 +65,17 @@ def fetch_county_demographics(state_fips: str = "42") -> pd.DataFrame:
     logger.info("Downloading ACS demographics for state FIPS %s", state_fips)
     response = requests.get(ACS_URL, params=params, timeout=30)
     response.raise_for_status()
-    return parse_demographics(response.json())
+    try:
+        payload = response.json()
+    except requests.exceptions.JSONDecodeError as exc:
+        raise RuntimeError(
+            "Census API did not return JSON — this almost always means a missing or "
+            "invalid CENSUS_API_KEY (the API returns an HTTP 200 'Missing Key' HTML "
+            "page rather than an error status). Get a free key at "
+            "https://api.census.gov/data/key_signup.html and set CENSUS_API_KEY in "
+            f".env or as a repo secret. Response body started with: {response.text[:200]!r}"
+        ) from exc
+    return parse_demographics(payload)
 
 
 def _is_stale(cache_path: Path, max_age_days: int, reference: datetime) -> bool:

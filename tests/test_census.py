@@ -4,6 +4,8 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pandas as pd
+import pytest
+import requests
 
 from data_platform.integrations.census import (
     _is_stale,
@@ -11,6 +13,10 @@ from data_platform.integrations.census import (
     get_demographics,
     parse_demographics,
 )
+
+# The Census API's actual failure mode for a missing/invalid key: HTTP 200
+# with an HTML body, not a JSON error — response.json() raises on this.
+MISSING_KEY_HTML = "<html><head><title>Missing Key</title></head><body>...</body></html>"
 
 SAMPLE_PAYLOAD = [
     [
@@ -73,6 +79,18 @@ def test_fetch_county_demographics_includes_api_key_when_set(mock_get, mock_sett
     fetch_county_demographics(state_fips="42")
     _, kwargs = mock_get.call_args
     assert kwargs["params"]["key"] == "test-key-123"
+
+
+@patch("data_platform.integrations.census.requests.get")
+def test_fetch_county_demographics_raises_clear_error_on_missing_key_page(mock_get):
+    bad_response = Mock(text=MISSING_KEY_HTML)
+    bad_response.json.side_effect = requests.exceptions.JSONDecodeError(
+        "Expecting value", MISSING_KEY_HTML, 0
+    )
+    mock_get.return_value = bad_response
+
+    with pytest.raises(RuntimeError, match="CENSUS_API_KEY"):
+        fetch_county_demographics(state_fips="42")
 
 
 def test_is_stale_missing_file(tmp_path):
