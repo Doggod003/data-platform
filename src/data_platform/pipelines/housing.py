@@ -4,7 +4,8 @@ Extract:   Zillow ZHVI county-level home values (public CSV) + Census ACS
            county demographics (cached, re-fetched every 90 days)
 Transform: filter to Pennsylvania, reshape to tidy long format, compute
            latest value, year-over-year change, and 5-year growth per county;
-           join demographics and derive affordability_ratio
+           join demographics and derive affordability_ratio; tag each county
+           with its PA tourism region
 Load:      write Power BI-ready CSVs to reports/
 
 Run with:  python -m data_platform.pipelines.housing
@@ -17,6 +18,7 @@ import pandas as pd
 
 from data_platform.integrations.census import get_demographics
 from data_platform.integrations.zillow import fetch_zhvi
+from data_platform.pipelines.regions import add_region
 from data_platform.reporting.charts import write_charts
 from data_platform.reporting.dashboard import build_dashboard
 from data_platform.reporting.powerbi_export import write_powerbi_exports
@@ -108,6 +110,8 @@ def run(state: str = "PA") -> pd.DataFrame:
     long_df = to_long(filter_state(raw, state))
     summary = summarize(long_df)
     summary = enrich_with_demographics(summary, get_demographics())
+    summary = add_region(summary)
+    long_df = add_region(long_df)
     load(long_df, summary)
     return summary
 
