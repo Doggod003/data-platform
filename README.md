@@ -58,6 +58,17 @@ The PA Housing pipeline (`src/data_platform/pipelines/housing.py`) writes to `re
   `flag_severity`, `flag_test`, `flag_detail`) and a `momentum` column (Hot / Steady / Cooling
   by YoY%), so Power Query doesn't need to reimplement that logic
 - `powerbi/monthly_quarterly.csv` — monthly `zhvi` pre-aggregated to quarterly means per region
+- `charts/top_movers.png`, `charts/consistency_scatter.png`, `charts/flagged_trends.png` —
+  static matplotlib renders of the same data, for anywhere the interactive dashboard doesn't fit
+
+## Charts
+
+Rendered monthly by the refresh workflow and published to
+[doggod003.github.io/data-platform](https://doggod003.github.io/data-platform/):
+
+![Top movers](https://doggod003.github.io/data-platform/charts/top_movers.png)
+![Consistency scatter](https://doggod003.github.io/data-platform/charts/consistency_scatter.png)
+![Flagged county trends](https://doggod003.github.io/data-platform/charts/flagged_trends.png)
 
 ## Conventions
 

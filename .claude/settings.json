@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /workspaces/data-platform; cp .env.example .env && echo \"created .env\")",
+      "Bash(ruff check *)",
+      "Bash(ruff format *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(pip install *)",
+      "Bash(python -m pytest tests/test_charts.py -q)",
+      "Bash(grep -n \"top-mover-chip\\\\|region-link\\\\|Download\\\\|trend-card\\\\|downloads\" /tmp/dash_test.html | head -20)",
+      "Read(//tmp/**)",
+      "Bash(node --check dash_script.js)",
+      "Bash(python -c ' *)"
+    ],
+    "additionalDirectories": [
+      "/workspaces/data-platform",
+      "/tmp"
+    ]
+  }
+}

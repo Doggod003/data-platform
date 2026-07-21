@@ -76,6 +76,14 @@ body{background:var(--bg);color:var(--text);padding:20px}
 .hdr{background:var(--bg-header);color:var(--on-dark);padding:20px 24px;border-radius:var(--radius);
 margin-bottom:var(--gap);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
 .hdr h1{font-size:20px;font-weight:600}.hdr .sub{font-size:12px;opacity:.75;margin-top:4px}
+.hdr .chip{display:inline-block;margin-top:8px;font-size:12px;background:rgba(255,255,255,.12);
+padding:4px 10px;border-radius:12px}
+.downloads{margin-bottom:var(--gap);font-size:12px}
+.downloads a{color:var(--text-2);text-decoration:none;margin-right:10px;padding:5px 12px;
+background:var(--bg-card);border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:inline-block}
+.downloads a:hover{color:var(--text)}
+.region-link{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--text-2)}
+.region-link:hover{color:var(--pos);border-bottom-color:var(--pos)}
 .filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .filters label{font-size:12px;opacity:.75}
 .filters select{padding:6px 10px;border:1px solid rgba(255,255,255,.25);border-radius:5px;
@@ -121,6 +129,7 @@ tbody tr:hover{background:#f8f9fa}
     <div>
       <h1>PA Housing Market Tracker</h1>
       <div class="sub" id="subline"></div>
+      <div class="chip" id="top-mover-chip"></div>
     </div>
     <div class="filters">
       <label for="f-momentum">Momentum</label>
@@ -139,6 +148,11 @@ tbody tr:hover{background:#f8f9fa}
     </div>
   </div>
 
+  <div class="downloads">
+    <a href="pa_housing_summary.csv" download>&darr; Summary CSV</a>
+    <a href="pa_housing_monthly.csv" download>&darr; Monthly CSV</a>
+  </div>
+
   <div class="kpis" id="kpis"></div>
 
   <div class="charts">
@@ -154,7 +168,7 @@ tbody tr:hover{background:#f8f9fa}
     </div>
   </div>
 
-  <div class="card spaced">
+  <div class="card spaced" id="trend-card">
     <h3>Value Trend <select id="f-region" style="margin-left:8px;font-size:13px;padding:3px 6px"></select></h3>
     <div class="hint">Quarterly typical home value, last 10 years. Verify flagged counties here: is the spike one odd quarter or a sustained ramp?</div>
     <canvas id="trend" style="max-height:280px"></canvas>
@@ -199,6 +213,19 @@ document.getElementById("subline").textContent =
 const ROWS = SUMMARY.map(r => ({...r,
   flagSort: r.flag_severity==="red"?0:r.flag_severity==="amber"?1:2,
   momentum: r.yoy_pct>=5?"hot":r.yoy_pct>=0?"steady":"cooling"}));
+
+const topMover = [...ROWS].sort((a,b)=>b.yoy_pct-a.yoy_pct)[0];
+document.getElementById("top-mover-chip").innerHTML =
+  `&uarr; Top mover: <strong>${topMover.region}</strong> ${topMover.yoy_pct.toFixed(1)}% YoY`;
+
+document.querySelector("#tbl tbody").addEventListener("click", e => {
+  const link = e.target.closest(".region-link");
+  if (!link) return;
+  e.preventDefault();
+  document.getElementById("f-region").value = link.dataset.region;
+  renderTrend();
+  document.getElementById("trend-card").scrollIntoView({behavior:"smooth", block:"start"});
+});
 
 let state={momentum:"all",flag:"all",sortK:"yoy_rank",sortDir:1};
 const visible=()=>ROWS.filter(r=>
@@ -282,7 +309,7 @@ function renderTable(){
   const max5=Math.max(...ROWS.map(r=>Math.abs(r.growth_5yr_pct)));
   document.querySelector("#tbl tbody").innerHTML=v.map(r=>`<tr>
     <td><span class="flag-dot ${r.flag_severity==="none"?"none":r.flag_severity}"></span>${r.flag_test||"\u2014"}</td>
-    <td>${r.region}</td>
+    <td><a href="#trend-card" class="region-link" data-region="${r.region}">${r.region}</a></td>
     <td>$${r.latest_zhvi.toLocaleString()}</td>
     <td class="bar-cell"><div class="bar" style="width:${Math.abs(r.yoy_pct)/maxY*100}%"></div><span>${r.yoy_pct.toFixed(1)}%</span></td>
     <td class="bar-cell"><div class="bar ${r.growth_5yr_pct<0?"negbar":""}" style="width:${Math.abs(r.growth_5yr_pct)/max5*100}%"></div><span>${r.growth_5yr_pct.toFixed(1)}%</span></td>

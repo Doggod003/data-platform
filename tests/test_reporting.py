@@ -94,6 +94,11 @@ def test_build_dashboard_writes_html(tmp_path):
     assert "PA Housing Market Tracker" in content
     assert "Forest County" in content
     assert "<script" in content
+    assert "pa_housing_summary.csv" in content
+    assert "pa_housing_monthly.csv" in content
+    assert 'class="region-link"' in content
+    assert 'id="top-mover-chip"' in content
+    assert 'id="trend-card"' in content
 
 
 def test_momentum_labels_cooling_steady_hot():
