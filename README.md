@@ -48,6 +48,17 @@ make run      # python -m data_platform
 4. Notebook outputs are stripped on commit automatically (nbstripout), so
    diffs stay readable and no data leaks into git history.
 
+## Outputs
+
+The PA Housing pipeline (`src/data_platform/pipelines/housing.py`) writes to `reports/`:
+
+- `pa_housing_monthly.csv` / `pa_housing_summary.csv` — tidy long data and per-county summary
+- `pa_housing_dashboard.html` — self-contained interactive dashboard (Chart.js, no server needed)
+- `powerbi/summary_enriched.csv` — summary + forensic flag columns (`implied_prior4yr`,
+  `flag_severity`, `flag_test`, `flag_detail`) and a `momentum` column (Hot / Steady / Cooling
+  by YoY%), so Power Query doesn't need to reimplement that logic
+- `powerbi/monthly_quarterly.csv` — monthly `zhvi` pre-aggregated to quarterly means per region
+
 ## Conventions
 
 - New pipeline = new module in `src/data_platform/pipelines/` (copy `example.py`) + matching test.

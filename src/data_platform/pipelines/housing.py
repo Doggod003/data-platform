@@ -15,6 +15,7 @@ import pandas as pd
 
 from data_platform.integrations.zillow import fetch_zhvi
 from data_platform.reporting.dashboard import build_dashboard
+from data_platform.reporting.powerbi_export import write_powerbi_exports
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ def load(long_df: pd.DataFrame, summary: pd.DataFrame) -> None:
     )
     dashboard_path = build_dashboard(summary, long_df, REPORTS_DIR / "pa_housing_dashboard.html")
     logger.info("Wrote %s", dashboard_path)
+    write_powerbi_exports(summary, long_df, REPORTS_DIR / "powerbi")
 
 
 def run(state: str = "PA") -> pd.DataFrame:

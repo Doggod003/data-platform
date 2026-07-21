@@ -6,6 +6,12 @@ import pandas as pd
 
 from data_platform.reporting.dashboard import build_dashboard
 from data_platform.reporting.forensic import run_forensic_tests
+from data_platform.reporting.powerbi_export import (
+    add_momentum,
+    build_monthly_quarterly,
+    build_summary_enriched,
+    write_powerbi_exports,
+)
 
 
 def sample_summary() -> pd.DataFrame:
@@ -88,3 +94,42 @@ def test_build_dashboard_writes_html(tmp_path):
     assert "PA Housing Market Tracker" in content
     assert "Forest County" in content
     assert "<script" in content
+
+
+def test_momentum_labels_cooling_steady_hot():
+    df = pd.DataFrame({"yoy_pct": [-2.0, 0.0, 4.9, 5.0]})
+    result = add_momentum(df)
+    assert list(result["momentum"]) == ["Cooling", "Steady", "Steady", "Hot"]
+
+
+def test_summary_enriched_has_momentum_and_forensic_columns():
+    result = build_summary_enriched(sample_summary())
+    forest = result[result["region"] == "Forest County"].iloc[0]
+    assert forest["momentum"] == "Hot"
+    assert forest["flag_severity"] == "red"
+    assert "implied_prior4yr" in result.columns
+
+
+def test_monthly_quarterly_aggregates_per_region():
+    result = build_monthly_quarterly(sample_monthly())
+    assert list(result.columns) == ["region", "quarter", "zhvi"]
+    assert len(result) < len(sample_monthly())
+    forest_q1_2016 = result[
+        (result["region"] == "Forest County") & (result["quarter"] == pd.Timestamp("2016-01-01"))
+    ].iloc[0]
+    assert forest_q1_2016["zhvi"] == 138050  # mean of Jan/Feb/Mar zhvi (138000, 138050, 138100)
+
+
+def test_write_powerbi_exports_writes_csvs(tmp_path):
+    enriched_path, quarterly_path = write_powerbi_exports(
+        sample_summary(), sample_monthly(), tmp_path / "powerbi"
+    )
+    assert enriched_path.exists()
+    assert quarterly_path.exists()
+
+    enriched = pd.read_csv(enriched_path)
+    assert "momentum" in enriched.columns
+    assert "flag_severity" in enriched.columns
+
+    quarterly = pd.read_csv(quarterly_path)
+    assert "Forest County" in quarterly["region"].values
