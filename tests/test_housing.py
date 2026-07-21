@@ -3,7 +3,9 @@
 import pandas as pd
 
 from data_platform.pipelines.housing import (
+    aggregate_schools,
     enrich_with_demographics,
+    enrich_with_schools,
     filter_state,
     summarize,
     to_long,
@@ -89,3 +91,80 @@ def test_enrich_with_demographics_computes_affordability_ratio():
     dauphin = enriched[enriched["region"] == "Dauphin County"].iloc[0]
     # latest_zhvi 300000 / median_income 60000 = 5.0
     assert dauphin["affordability_ratio"] == 5.0
+
+
+def sample_districts() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            # Dauphin: 1 regular district + 1 CTC (agency_type=9, not a "district")
+            {
+                "district": "Central Dauphin School District",
+                "county": "Dauphin County",
+                "agency_type": 1,
+                "number_of_schools": 12,
+                "enrollment": 10500,
+            },
+            {
+                "district": "Dauphin County Technical School",
+                "county": "Dauphin County",
+                "agency_type": 9,
+                "number_of_schools": 1,
+                "enrollment": 450,
+            },
+            # Cumberland: 1 regular district, no private schools
+            {
+                "district": "Cumberland Valley School District",
+                "county": "Cumberland County",
+                "agency_type": 1,
+                "number_of_schools": 8,
+                "enrollment": 7200,
+            },
+        ]
+    )
+
+
+def sample_private_schools() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"school": "St Joseph School", "county": "Dauphin County", "enrollment": 210},
+            {"school": "Trinity Academy", "county": "Dauphin County", "enrollment": 150},
+        ]
+    )
+
+
+def test_aggregate_schools_counts_only_regular_districts():
+    result = aggregate_schools(sample_districts(), sample_private_schools())
+    dauphin = result[result["county"] == "Dauphin County"].iloc[0]
+    # 2 LEAs in Dauphin, but only the regular district (agency_type=1) counts
+    assert dauphin["district_count"] == 1
+
+
+def test_aggregate_schools_sums_enrollment_across_all_agency_types():
+    result = aggregate_schools(sample_districts(), sample_private_schools())
+    dauphin = result[result["county"] == "Dauphin County"].iloc[0]
+    # 10500 (regular district) + 450 (CTC) -- CTC students still live in the county
+    assert dauphin["total_enrollment"] == 10950
+
+
+def test_aggregate_schools_counts_private_schools():
+    result = aggregate_schools(sample_districts(), sample_private_schools())
+    dauphin = result[result["county"] == "Dauphin County"].iloc[0]
+    assert dauphin["private_school_count"] == 2
+
+
+def test_aggregate_schools_zero_fills_county_with_no_private_schools():
+    result = aggregate_schools(sample_districts(), sample_private_schools())
+    cumberland = result[result["county"] == "Cumberland County"].iloc[0]
+    assert cumberland["private_school_count"] == 0
+    assert cumberland["district_count"] == 1
+    assert cumberland["total_enrollment"] == 7200
+
+
+def test_enrich_with_schools_joins_by_county():
+    summary = summarize(to_long(filter_state(sample_wide(), "PA")))
+    aggregates = aggregate_schools(sample_districts(), sample_private_schools())
+    enriched = enrich_with_schools(summary, aggregates)
+    assert "county" not in enriched.columns
+    dauphin = enriched[enriched["region"] == "Dauphin County"].iloc[0]
+    assert dauphin["district_count"] == 1
+    assert dauphin["private_school_count"] == 2

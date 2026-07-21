@@ -10,13 +10,14 @@ stale. Docs: https://www.census.gov/data/developers/data-sets/acs-5year.html
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import requests
 
 from data_platform.config import settings
+from data_platform.utils.caching import is_stale
 
 logger = logging.getLogger(__name__)
 
@@ -78,21 +79,13 @@ def fetch_county_demographics(state_fips: str = "42") -> pd.DataFrame:
     return parse_demographics(payload)
 
 
-def _is_stale(cache_path: Path, max_age_days: int, reference: datetime) -> bool:
-    """True if cache_path is missing or older than max_age_days before reference."""
-    if not cache_path.exists():
-        return True
-    mtime = datetime.fromtimestamp(cache_path.stat().st_mtime, tz=UTC)
-    return reference - mtime > timedelta(days=max_age_days)
-
-
 def get_demographics(
     state_fips: str = "42",
     cache_path: Path = DEFAULT_CACHE_PATH,
     max_age_days: int = CACHE_MAX_AGE_DAYS,
 ) -> pd.DataFrame:
     """Return cached demographics if fresh, else fetch, cache, and return."""
-    if not _is_stale(cache_path, max_age_days, datetime.now(UTC)):
+    if not is_stale(cache_path, max_age_days, datetime.now(UTC)):
         logger.info("Using cached demographics: %s", cache_path)
         return pd.read_csv(cache_path)
 

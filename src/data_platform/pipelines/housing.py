@@ -1,11 +1,12 @@
 """PA Housing Market pipeline.
 
 Extract:   Zillow ZHVI county-level home values (public CSV) + Census ACS
-           county demographics (cached, re-fetched every 90 days)
+           county demographics + PA school districts/private schools
+           (all cached, re-fetched every 90 days)
 Transform: filter to Pennsylvania, reshape to tidy long format, compute
            latest value, year-over-year change, and 5-year growth per county;
-           join demographics and derive affordability_ratio; tag each county
-           with its PA tourism region
+           join demographics and derive affordability_ratio; join per-county
+           school aggregates; tag each county with its PA tourism region
 Load:      write Power BI-ready CSVs to reports/
 
 Run with:  python -m data_platform.pipelines.housing
@@ -17,6 +18,11 @@ from pathlib import Path
 import pandas as pd
 
 from data_platform.integrations.census import get_demographics
+from data_platform.integrations.pa_schools import (
+    REGULAR_DISTRICT_AGENCY_TYPE,
+    get_private_schools,
+    get_school_districts,
+)
 from data_platform.integrations.zillow import fetch_zhvi
 from data_platform.pipelines.regions import add_region
 from data_platform.reporting.charts import write_charts
@@ -90,15 +96,43 @@ def enrich_with_demographics(summary: pd.DataFrame, demographics: pd.DataFrame) 
     return merged
 
 
-def load(long_df: pd.DataFrame, summary: pd.DataFrame) -> None:
+def aggregate_schools(districts: pd.DataFrame, private: pd.DataFrame) -> pd.DataFrame:
+    """One row per county: district_count (regular districts only), total_enrollment
+    (all public LEAs — charter/CTC students are still county residents), and
+    private_school_count.
+    """
+    regular = districts[districts["agency_type"] == REGULAR_DISTRICT_AGENCY_TYPE]
+    district_count = regular.groupby("county").size().rename("district_count")
+    total_enrollment = districts.groupby("county")["enrollment"].sum(min_count=1)
+    total_enrollment = total_enrollment.rename("total_enrollment")
+    private_school_count = private.groupby("county").size().rename("private_school_count")
+
+    combined = pd.concat([district_count, total_enrollment, private_school_count], axis=1)
+    combined = combined.fillna(0).reset_index().rename(columns={"index": "county"})
+    for col in ["district_count", "total_enrollment", "private_school_count"]:
+        combined[col] = combined[col].astype(int)
+    return combined
+
+
+def enrich_with_schools(summary: pd.DataFrame, school_aggregates: pd.DataFrame) -> pd.DataFrame:
+    """Left-join per-county school aggregates onto the summary."""
+    return summary.merge(school_aggregates, left_on="region", right_on="county", how="left").drop(
+        columns="county"
+    )
+
+
+def load(long_df: pd.DataFrame, summary: pd.DataFrame, districts: pd.DataFrame) -> None:
     REPORTS_DIR.mkdir(exist_ok=True)
     long_path = REPORTS_DIR / "pa_housing_monthly.csv"
     summary_path = REPORTS_DIR / "pa_housing_summary.csv"
+    schools_path = REPORTS_DIR / "pa_schools.csv"
     long_df.to_csv(long_path, index=False)
     summary.to_csv(summary_path, index=False)
+    districts.to_csv(schools_path, index=False)
     logger.info(
         "Wrote %s (%d rows) and %s (%d rows)", long_path, len(long_df), summary_path, len(summary)
     )
+    logger.info("Wrote %s (%d rows)", schools_path, len(districts))
     dashboard_path = build_dashboard(summary, long_df, REPORTS_DIR / "pa_housing_dashboard.html")
     logger.info("Wrote %s", dashboard_path)
     write_powerbi_exports(summary, long_df, REPORTS_DIR / "powerbi")
@@ -110,9 +144,15 @@ def run(state: str = "PA") -> pd.DataFrame:
     long_df = to_long(filter_state(raw, state))
     summary = summarize(long_df)
     summary = enrich_with_demographics(summary, get_demographics())
+
+    districts = get_school_districts()
+    private = get_private_schools()
+    summary = enrich_with_schools(summary, aggregate_schools(districts, private))
+
     summary = add_region(summary)
     long_df = add_region(long_df)
-    load(long_df, summary)
+    districts = add_region(districts, county_col="county")
+    load(long_df, summary, districts)
     return summary
 
 
