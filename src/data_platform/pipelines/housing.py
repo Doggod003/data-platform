@@ -1,12 +1,13 @@
 """PA Housing Market pipeline.
 
 Extract:   Zillow ZHVI county-level home values (public CSV) + Census ACS
-           county demographics + PA school districts/private schools
-           (all cached, re-fetched every 90 days)
+           county demographics + PA school districts/private schools +
+           OSM amenities (all cached, re-fetched every 90 days)
 Transform: filter to Pennsylvania, reshape to tidy long format, compute
            latest value, year-over-year change, and 5-year growth per county;
            join demographics and derive affordability_ratio; join per-county
-           school aggregates; tag each county with its PA tourism region
+           school and amenity aggregates; tag each county with its PA
+           tourism region
 Load:      write Power BI-ready CSVs to reports/
 
 Run with:  python -m data_platform.pipelines.housing
@@ -18,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from data_platform.integrations.census import get_demographics
+from data_platform.integrations.osm_amenities import CATEGORIES, get_amenities
 from data_platform.integrations.pa_schools import (
     REGULAR_DISTRICT_AGENCY_TYPE,
     get_private_schools,
@@ -35,6 +37,8 @@ REPORTS_DIR = Path("reports")
 
 # Zillow wide files have metadata columns first, then one column per month.
 ID_COLS = ["RegionID", "RegionName", "StateName"]
+
+PITCH_SPORTS = ["baseball", "soccer", "rugby", "basketball", "tennis"]
 
 
 def filter_state(raw: pd.DataFrame, state: str = "PA") -> pd.DataFrame:
@@ -121,7 +125,53 @@ def enrich_with_schools(summary: pd.DataFrame, school_aggregates: pd.DataFrame) 
     )
 
 
-def load(long_df: pd.DataFrame, summary: pd.DataFrame, districts: pd.DataFrame) -> None:
+def _count_pivot(
+    df: pd.DataFrame, group_col: str, categories: list[str], counties: list[str]
+) -> pd.DataFrame:
+    """County x category count grid, zero-filled for every combination."""
+    if df.empty:
+        return pd.DataFrame(0, index=counties, columns=categories)
+    counts = df.groupby(["county", group_col]).size().unstack(fill_value=0)
+    return counts.reindex(index=counties, columns=categories, fill_value=0)
+
+
+def aggregate_amenities(amenities: pd.DataFrame) -> pd.DataFrame:
+    """One row per county: counts of parks, golf courses, playgrounds, pitches by
+    sport (baseball/soccer/rugby/basketball/tennis), and total_amenities (every
+    OSM element counted, including pitches of any/no sport).
+    """
+    counties = sorted(amenities["county"].unique())
+
+    category_counts = _count_pivot(amenities, "category", CATEGORIES, counties)
+    category_counts.columns = [f"{c}_count" for c in category_counts.columns]
+
+    pitches = amenities[amenities["category"] == "pitch"]
+    sport_counts = _count_pivot(pitches, "sport", PITCH_SPORTS, counties)
+    sport_counts.columns = [f"pitch_{s}_count" for s in sport_counts.columns]
+
+    total_amenities = amenities.groupby("county").size().reindex(counties, fill_value=0)
+    total_amenities.name = "total_amenities"
+
+    combined = pd.concat([category_counts, sport_counts, total_amenities], axis=1)
+    combined = combined.reset_index().rename(columns={"index": "county"})
+    count_cols = [c for c in combined.columns if c != "county"]
+    combined[count_cols] = combined[count_cols].astype(int)
+    return combined
+
+
+def enrich_with_amenities(summary: pd.DataFrame, amenity_aggregates: pd.DataFrame) -> pd.DataFrame:
+    """Left-join per-county amenity aggregates onto the summary."""
+    return summary.merge(amenity_aggregates, left_on="region", right_on="county", how="left").drop(
+        columns="county"
+    )
+
+
+def load(
+    long_df: pd.DataFrame,
+    summary: pd.DataFrame,
+    districts: pd.DataFrame,
+    amenities: pd.DataFrame,
+) -> None:
     REPORTS_DIR.mkdir(exist_ok=True)
     long_path = REPORTS_DIR / "pa_housing_monthly.csv"
     summary_path = REPORTS_DIR / "pa_housing_summary.csv"
@@ -133,7 +183,9 @@ def load(long_df: pd.DataFrame, summary: pd.DataFrame, districts: pd.DataFrame) 
         "Wrote %s (%d rows) and %s (%d rows)", long_path, len(long_df), summary_path, len(summary)
     )
     logger.info("Wrote %s (%d rows)", schools_path, len(districts))
-    dashboard_path = build_dashboard(summary, long_df, REPORTS_DIR / "pa_housing_dashboard.html")
+    dashboard_path = build_dashboard(
+        summary, long_df, amenities, REPORTS_DIR / "pa_housing_dashboard.html"
+    )
     logger.info("Wrote %s", dashboard_path)
     write_powerbi_exports(summary, long_df, REPORTS_DIR / "powerbi")
     write_charts(summary, long_df, REPORTS_DIR / "charts")
@@ -149,10 +201,13 @@ def run(state: str = "PA") -> pd.DataFrame:
     private = get_private_schools()
     summary = enrich_with_schools(summary, aggregate_schools(districts, private))
 
+    amenities = get_amenities()
+    summary = enrich_with_amenities(summary, aggregate_amenities(amenities))
+
     summary = add_region(summary)
     long_df = add_region(long_df)
     districts = add_region(districts, county_col="county")
-    load(long_df, summary, districts)
+    load(long_df, summary, districts, amenities)
     return summary
 
 

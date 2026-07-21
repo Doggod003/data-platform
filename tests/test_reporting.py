@@ -30,6 +30,19 @@ def sample_summary() -> pd.DataFrame:
                 "median_age": 51.2,
                 "owner_occupancy_pct": 79.5,
                 "affordability_ratio": 2.89,
+                "district_count": 1,
+                "total_enrollment": 1200,
+                "private_school_count": 1,
+                "park_count": 3,
+                "golf_course_count": 0,
+                "pitch_count": 1,
+                "playground_count": 2,
+                "pitch_baseball_count": 1,
+                "pitch_soccer_count": 0,
+                "pitch_rugby_count": 0,
+                "pitch_basketball_count": 0,
+                "pitch_tennis_count": 0,
+                "total_amenities": 6,
             },
             # clean, unremarkable county
             {
@@ -44,6 +57,19 @@ def sample_summary() -> pd.DataFrame:
                 "median_age": 40.6,
                 "owner_occupancy_pct": 66.8,
                 "affordability_ratio": 3.75,
+                "district_count": 3,
+                "total_enrollment": 15000,
+                "private_school_count": 8,
+                "park_count": 10,
+                "golf_course_count": 2,
+                "pitch_count": 5,
+                "playground_count": 4,
+                "pitch_baseball_count": 2,
+                "pitch_soccer_count": 2,
+                "pitch_rugby_count": 0,
+                "pitch_basketball_count": 0,
+                "pitch_tennis_count": 1,
+                "total_amenities": 21,
             },
             # small base + double-digit YoY
             {
@@ -58,6 +84,19 @@ def sample_summary() -> pd.DataFrame:
                 "median_age": 45.9,
                 "owner_occupancy_pct": 74.3,
                 "affordability_ratio": 0.96,
+                "district_count": 1,
+                "total_enrollment": 1800,
+                "private_school_count": 0,
+                "park_count": 1,
+                "golf_course_count": 0,
+                "pitch_count": 0,
+                "playground_count": 1,
+                "pitch_baseball_count": 0,
+                "pitch_soccer_count": 0,
+                "pitch_rugby_count": 0,
+                "pitch_basketball_count": 0,
+                "pitch_tennis_count": 0,
+                "total_amenities": 2,
             },
         ]
     )
@@ -74,6 +113,26 @@ def sample_monthly() -> pd.DataFrame:
         for i, d in enumerate(dates):
             rows.append({"region": region, "date": d, "zhvi": start + i * 50})
     return pd.DataFrame(rows)
+
+
+def sample_amenities() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"county": "Forest County", "category": "park", "sport": None, "name": "Forest Park"},
+            {
+                "county": "Forest County",
+                "category": "pitch",
+                "sport": "baseball",
+                "name": "Forest Diamond",
+            },
+            {
+                "county": "Erie County",
+                "category": "golf_course",
+                "sport": None,
+                "name": "Erie Golf Club",
+            },
+        ]
+    )
 
 
 def test_trend_reversal_flagged_red():
@@ -103,7 +162,9 @@ def test_implied_prior_growth_computed():
 
 
 def test_build_dashboard_writes_html(tmp_path):
-    out = build_dashboard(sample_summary(), sample_monthly(), tmp_path / "dash.html")
+    out = build_dashboard(
+        sample_summary(), sample_monthly(), sample_amenities(), tmp_path / "dash.html"
+    )
     assert out.exists()
     content = out.read_text(encoding="utf-8")
     assert "PA Housing Market Tracker" in content
@@ -117,7 +178,9 @@ def test_build_dashboard_writes_html(tmp_path):
 
 
 def test_build_dashboard_has_three_views_and_router(tmp_path):
-    out = build_dashboard(sample_summary(), sample_monthly(), tmp_path / "dash.html")
+    out = build_dashboard(
+        sample_summary(), sample_monthly(), sample_amenities(), tmp_path / "dash.html"
+    )
     content = out.read_text(encoding="utf-8")
     assert 'id="view-overview"' in content
     assert 'id="view-regions"' in content
@@ -130,11 +193,33 @@ def test_build_dashboard_has_three_views_and_router(tmp_path):
 
 
 def test_build_dashboard_renders_a_county_section(tmp_path):
-    out = build_dashboard(sample_summary(), sample_monthly(), tmp_path / "dash.html")
+    out = build_dashboard(
+        sample_summary(), sample_monthly(), sample_amenities(), tmp_path / "dash.html"
+    )
     content = out.read_text(encoding="utf-8")
     # Forest County's slug must be embedded so #county/forest-county is reachable
     assert "forest-county" in content
     assert "avg_yoy_pct" in content  # proves the REGIONAL blob is embedded too
+
+
+def test_build_dashboard_has_living_here_section(tmp_path):
+    out = build_dashboard(
+        sample_summary(), sample_monthly(), sample_amenities(), tmp_path / "dash.html"
+    )
+    content = out.read_text(encoding="utf-8")
+    assert "Living Here" in content
+    assert 'class="amenity-group"' in content
+    assert "amenities_per_10k" in content  # Regions view card stat
+
+
+def test_build_dashboard_embeds_amenity_names(tmp_path):
+    out = build_dashboard(
+        sample_summary(), sample_monthly(), sample_amenities(), tmp_path / "dash.html"
+    )
+    content = out.read_text(encoding="utf-8")
+    # the raw amenity names must be embedded so the expandable list can show them
+    assert "Forest Park" in content
+    assert "Forest Diamond" in content
 
 
 def test_slugify_lowercases_and_hyphenates_spaces():

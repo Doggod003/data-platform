@@ -3,7 +3,9 @@
 import pandas as pd
 
 from data_platform.pipelines.housing import (
+    aggregate_amenities,
     aggregate_schools,
+    enrich_with_amenities,
     enrich_with_demographics,
     enrich_with_schools,
     filter_state,
@@ -168,3 +170,79 @@ def test_enrich_with_schools_joins_by_county():
     dauphin = enriched[enriched["region"] == "Dauphin County"].iloc[0]
     assert dauphin["district_count"] == 1
     assert dauphin["private_school_count"] == 2
+
+
+def sample_amenities() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "county": "Dauphin County",
+                "category": "park",
+                "sport": None,
+                "name": "Riverfront Park",
+            },
+            {
+                "county": "Dauphin County",
+                "category": "park",
+                "sport": None,
+                "name": "Wildwood Park",
+            },
+            {
+                "county": "Dauphin County",
+                "category": "golf_course",
+                "sport": None,
+                "name": "Colonial",
+            },
+            {
+                "county": "Dauphin County",
+                "category": "pitch",
+                "sport": "baseball",
+                "name": "Field 1",
+            },
+            {"county": "Dauphin County", "category": "pitch", "sport": "soccer", "name": None},
+            {"county": "Dauphin County", "category": "playground", "sport": None, "name": None},
+            {"county": "Cumberland County", "category": "park", "sport": None, "name": "Only Park"},
+        ]
+    )
+
+
+def test_aggregate_amenities_counts_by_category():
+    result = aggregate_amenities(sample_amenities())
+    dauphin = result[result["county"] == "Dauphin County"].iloc[0]
+    assert dauphin["park_count"] == 2
+    assert dauphin["golf_course_count"] == 1
+    assert dauphin["pitch_count"] == 2
+    assert dauphin["playground_count"] == 1
+
+
+def test_aggregate_amenities_counts_pitches_by_sport():
+    result = aggregate_amenities(sample_amenities())
+    dauphin = result[result["county"] == "Dauphin County"].iloc[0]
+    assert dauphin["pitch_baseball_count"] == 1
+    assert dauphin["pitch_soccer_count"] == 1
+    assert dauphin["pitch_rugby_count"] == 0
+    assert dauphin["pitch_basketball_count"] == 0
+    assert dauphin["pitch_tennis_count"] == 0
+
+
+def test_aggregate_amenities_computes_total():
+    result = aggregate_amenities(sample_amenities())
+    dauphin = result[result["county"] == "Dauphin County"].iloc[0]
+    assert dauphin["total_amenities"] == 6
+
+
+def test_aggregate_amenities_zero_fills_county_with_few_amenities():
+    result = aggregate_amenities(sample_amenities())
+    cumberland = result[result["county"] == "Cumberland County"].iloc[0]
+    assert cumberland["park_count"] == 1
+    assert cumberland["pitch_baseball_count"] == 0
+    assert cumberland["total_amenities"] == 1
+
+
+def test_enrich_with_amenities_joins_by_county():
+    summary = summarize(to_long(filter_state(sample_wide(), "PA")))
+    aggregates = aggregate_amenities(sample_amenities())
+    enriched = enrich_with_amenities(summary, aggregates)
+    assert "county" not in enriched.columns
+    dauphin = enriched[enriched["region"] == "Dauphin County"].iloc[0]
+    assert dauphin["total_amenities"] == 6

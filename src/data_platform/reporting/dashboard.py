@@ -51,9 +51,18 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return df.astype(object).where(df.notna(), None).to_dict(orient="records")
 
 
+def _amenities_by_county(amenities: pd.DataFrame) -> dict[str, list]:
+    """Group raw OSM amenity elements by county, for the County Detail expandable names list."""
+    return {
+        county: _records(grp[["category", "sport", "name"]])
+        for county, grp in amenities.groupby("county")
+    }
+
+
 def build_dashboard(
     summary: pd.DataFrame,
     monthly: pd.DataFrame,
+    amenities: pd.DataFrame,
     out_path: Path = Path("reports/pa_housing_dashboard.html"),
 ) -> Path:
     tested = add_region(run_forensic_tests(summary))
@@ -78,6 +87,7 @@ def build_dashboard(
         _TEMPLATE.replace("__SUMMARY_JSON__", json.dumps(_records(tested)))
         .replace("__MONTHLY_JSON__", json.dumps(_to_quarterly_series(monthly, "region")))
         .replace("__REGIONAL_JSON__", json.dumps(regional))
+        .replace("__AMENITIES_JSON__", json.dumps(_amenities_by_county(amenities)))
         .replace("__META_JSON__", json.dumps(meta))
     )
     out_path.parent.mkdir(exist_ok=True)
@@ -169,6 +179,12 @@ cursor:pointer;font-size:13px}
 .county-picker-row button:disabled{opacity:.35;cursor:default}
 .region-context{font-size:13px;color:var(--text-2);margin-bottom:var(--gap)}
 .bench-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin-bottom:var(--gap)}
+.amenity-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.amenity-group{background:var(--bg);border-radius:6px;padding:8px 12px;font-size:13px}
+.amenity-group summary{cursor:pointer;font-weight:600;list-style:none}
+.amenity-group summary::-webkit-details-marker{display:none}
+.amenity-group .amenity-count{float:right;color:var(--text-2);font-weight:400}
+.amenity-group ul{margin:8px 0 0 16px;font-size:12.5px;color:var(--text-2);max-height:160px;overflow-y:auto}
 @media(max-width:820px){.charts{grid-template-columns:1fr}.bench-grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -284,6 +300,7 @@ cursor:pointer;font-size:13px}
 const SUMMARY = __SUMMARY_JSON__;
 const MONTHLY = __MONTHLY_JSON__;
 const REGIONAL = __REGIONAL_JSON__;
+const AMENITIES = __AMENITIES_JSON__;
 const META = __META_JSON__;
 
 document.getElementById("subline").textContent =
@@ -439,6 +456,7 @@ function renderRegions(){
         <div><strong>${r.avg_yoy_pct.toFixed(1)}%</strong>avg YoY</div>
         <div><strong>${r.avg_affordability_ratio!=null?r.avg_affordability_ratio.toFixed(1)+"x":"n/a"}</strong>affordability</div>
         <div><strong>${r.flagged_count}</strong>flagged / ${r.county_count}</div>
+        <div><strong>${r.amenities_per_10k.toFixed(1)}</strong>amenities /10k residents</div>
       </div>
       <canvas id="spark-${r.slug}"></canvas>
     </div>`).join("");
@@ -489,6 +507,28 @@ function regionPeers(row){
   return ROWS.filter(r=>r.pa_region===row.pa_region).sort((a,b)=>a.region.localeCompare(b.region));
 }
 
+const AMENITY_GROUPS = [
+  ["Parks", "park", null],
+  ["Golf Courses", "golf_course", null],
+  ["Playgrounds", "playground", null],
+  ["Baseball Pitches", "pitch", "baseball"],
+  ["Soccer Pitches", "pitch", "soccer"],
+  ["Rugby Pitches", "pitch", "rugby"],
+  ["Basketball Pitches", "pitch", "basketball"],
+  ["Tennis Pitches", "pitch", "tennis"],
+];
+
+function amenityDetailsBlock(label, category, sport, countyAmenities){
+  const items=countyAmenities.filter(a=>a.category===category && (sport?a.sport===sport:true));
+  const body=items.length
+    ? `<ul>${items.map(a=>`<li>${a.name||"(unnamed)"}</li>`).join("")}</ul>`
+    : `<div class="hint">None found nearby.</div>`;
+  return `<details class="amenity-group">
+    <summary>${label} <span class="amenity-count">${items.length}</span></summary>
+    ${body}
+  </details>`;
+}
+
 function navigatePeer(delta){
   const row=ROWS.find(r=>r.slug===lastCountySlug);
   if(!row) return;
@@ -535,6 +575,22 @@ function renderCounty(slug){
         <td>${row.median_age!=null?row.median_age:"n/a"}</td>
         <td>${row.owner_occupancy_pct!=null?row.owner_occupancy_pct+"%":"n/a"}</td>
       </tr></tbody></table></div>
+    </div>
+
+    <div class="card spaced">
+      <h3>Living Here &mdash; Schools</h3>
+      <div class="kpis">
+        <div class="kpi"><div class="lbl">School Districts</div><div class="val">${row.district_count}</div><div class="note">regular public districts</div></div>
+        <div class="kpi"><div class="lbl">Public Enrollment</div><div class="val">${row.total_enrollment.toLocaleString()}</div><div class="note">all public LEAs</div></div>
+        <div class="kpi"><div class="lbl">Private Schools</div><div class="val">${row.private_school_count}</div><div class="note">NCES PSS count</div></div>
+      </div>
+    </div>
+
+    <div class="card spaced">
+      <h3>Living Here &mdash; Amenities</h3>
+      <div class="hint">${row.total_amenities} total recreational amenities nearby (OpenStreetMap). Click a category to see names.</div>
+      <div class="amenity-groups">${AMENITY_GROUPS.map(([label,cat,sport])=>
+        amenityDetailsBlock(label, cat, sport, AMENITIES[row.region]||[])).join("")}</div>
     </div>
 
     <div class="card spaced">

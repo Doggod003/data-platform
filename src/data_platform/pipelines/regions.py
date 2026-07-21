@@ -98,10 +98,15 @@ def add_region(df: pd.DataFrame, county_col: str = "region") -> pd.DataFrame:
 
 
 def regional_summary(tested_summary: pd.DataFrame) -> pd.DataFrame:
-    """One row per region: county count, median value, avg YoY, avg affordability, flagged count.
+    """One row per region: county count, median value, avg YoY, avg affordability,
+    flagged count, and amenities per 10k residents.
 
-    Expects a summary that already carries pa_region (via add_region) and
-    flag_severity (via forensic.run_forensic_tests).
+    Expects a summary that already carries pa_region (via add_region),
+    flag_severity (via forensic.run_forensic_tests), and population/
+    total_amenities (via housing.enrich_with_demographics/enrich_with_amenities).
+    amenities_per_10k is region-wide total_amenities / total population, not an
+    average of each county's own ratio — that would let a tiny county's ratio
+    count as much as Philadelphia's.
     """
     grouped = tested_summary.groupby("pa_region")
     out = grouped.agg(
@@ -110,10 +115,14 @@ def regional_summary(tested_summary: pd.DataFrame) -> pd.DataFrame:
         avg_yoy_pct=("yoy_pct", "mean"),
         avg_affordability_ratio=("affordability_ratio", "mean"),
         flagged_count=("flag_severity", lambda s: int((s != "none").sum())),
+        total_amenities=("total_amenities", "sum"),
+        total_population=("population", "sum"),
     ).reset_index()
     out["median_zhvi"] = out["median_zhvi"].round(0)
     out["avg_yoy_pct"] = out["avg_yoy_pct"].round(1)
     out["avg_affordability_ratio"] = out["avg_affordability_ratio"].round(2)
+    out["amenities_per_10k"] = round(out["total_amenities"] / out["total_population"] * 10000, 1)
+    out = out.drop(columns=["total_amenities", "total_population"])
     return out.sort_values("pa_region").reset_index(drop=True)
 
 

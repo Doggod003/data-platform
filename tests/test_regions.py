@@ -115,6 +115,8 @@ def sample_tested_summary() -> pd.DataFrame:
                 "yoy_pct": 8.0,
                 "affordability_ratio": 4.0,
                 "flag_severity": "red",
+                "population": 1500000,
+                "total_amenities": 450,
             },
             {
                 "region": "Bucks County",
@@ -123,6 +125,8 @@ def sample_tested_summary() -> pd.DataFrame:
                 "yoy_pct": 4.0,
                 "affordability_ratio": 3.0,
                 "flag_severity": "none",
+                "population": 500000,
+                "total_amenities": 50,
             },
             {
                 "region": "Erie County",
@@ -131,6 +135,8 @@ def sample_tested_summary() -> pd.DataFrame:
                 "yoy_pct": 2.0,
                 "affordability_ratio": 2.5,
                 "flag_severity": "none",
+                "population": 270000,
+                "total_amenities": 81,
             },
         ]
     )
@@ -150,6 +156,22 @@ def test_regional_summary_flagged_count_zero_when_clean():
     result = regional_summary(sample_tested_summary())
     wilds = result[result["pa_region"] == "PA Wilds / Northwest"].iloc[0]
     assert wilds["flagged_count"] == 0
+
+
+def test_regional_summary_amenities_per_10k_is_population_weighted():
+    result = regional_summary(sample_tested_summary())
+    philly = result[result["pa_region"] == "Philadelphia"].iloc[0]
+    # (450 + 50) amenities / (1,500,000 + 500,000) population * 10,000 = 2.5 --
+    # NOT the naive average of each county's own ratio (3.0 and 1.0 -> 2.0),
+    # which would over-weight a small county against a huge one.
+    assert philly["amenities_per_10k"] == 2.5
+
+
+def test_regional_summary_amenities_per_10k_single_county_region():
+    result = regional_summary(sample_tested_summary())
+    wilds = result[result["pa_region"] == "PA Wilds / Northwest"].iloc[0]
+    # 81 / 270,000 * 10,000 = 3.0
+    assert wilds["amenities_per_10k"] == 3.0
 
 
 def sample_monthly_with_region() -> pd.DataFrame:
