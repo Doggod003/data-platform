@@ -2,7 +2,12 @@
 
 import pandas as pd
 
-from data_platform.pipelines.housing import filter_state, summarize, to_long
+from data_platform.pipelines.housing import (
+    enrich_with_demographics,
+    filter_state,
+    summarize,
+    to_long,
+)
 
 
 def sample_wide() -> pd.DataFrame:
@@ -46,3 +51,41 @@ def test_summarize_ranks_by_yoy():
     summary = summarize(to_long(filter_state(sample_wide(), "PA")))
     assert summary.iloc[0]["yoy_rank"] == 1
     assert summary.iloc[0]["yoy_pct"] >= summary.iloc[-1]["yoy_pct"]
+
+
+def sample_demographics() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "county": "Dauphin County",
+                "population": 270000,
+                "median_income": 60000,
+                "median_age": 38.5,
+                "owner_occupancy_pct": 63.6,
+            },
+            {
+                "county": "Cumberland County",
+                "population": 260000,
+                "median_income": 70000,
+                "median_age": 40.1,
+                "owner_occupancy_pct": 75.0,
+            },
+        ]
+    )
+
+
+def test_enrich_with_demographics_joins_by_county():
+    summary = summarize(to_long(filter_state(sample_wide(), "PA")))
+    enriched = enrich_with_demographics(summary, sample_demographics())
+    assert "median_income" in enriched.columns
+    assert "county" not in enriched.columns
+    dauphin = enriched[enriched["region"] == "Dauphin County"].iloc[0]
+    assert dauphin["population"] == 270000
+
+
+def test_enrich_with_demographics_computes_affordability_ratio():
+    summary = summarize(to_long(filter_state(sample_wide(), "PA")))
+    enriched = enrich_with_demographics(summary, sample_demographics())
+    dauphin = enriched[enriched["region"] == "Dauphin County"].iloc[0]
+    # latest_zhvi 300000 / median_income 60000 = 5.0
+    assert dauphin["affordability_ratio"] == 5.0

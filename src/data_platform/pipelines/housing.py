@@ -1,8 +1,10 @@
 """PA Housing Market pipeline.
 
-Extract:   Zillow ZHVI county-level home values (public CSV)
+Extract:   Zillow ZHVI county-level home values (public CSV) + Census ACS
+           county demographics (cached, re-fetched every 90 days)
 Transform: filter to Pennsylvania, reshape to tidy long format, compute
-           latest value, year-over-year change, and 5-year growth per county
+           latest value, year-over-year change, and 5-year growth per county;
+           join demographics and derive affordability_ratio
 Load:      write Power BI-ready CSVs to reports/
 
 Run with:  python -m data_platform.pipelines.housing
@@ -13,6 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from data_platform.integrations.census import get_demographics
 from data_platform.integrations.zillow import fetch_zhvi
 from data_platform.reporting.charts import write_charts
 from data_platform.reporting.dashboard import build_dashboard
@@ -76,6 +79,15 @@ def summarize(long_df: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
+def enrich_with_demographics(summary: pd.DataFrame, demographics: pd.DataFrame) -> pd.DataFrame:
+    """Left-join Census demographics onto the summary; add affordability_ratio."""
+    merged = summary.merge(demographics, left_on="region", right_on="county", how="left").drop(
+        columns="county"
+    )
+    merged["affordability_ratio"] = round(merged["latest_zhvi"] / merged["median_income"], 2)
+    return merged
+
+
 def load(long_df: pd.DataFrame, summary: pd.DataFrame) -> None:
     REPORTS_DIR.mkdir(exist_ok=True)
     long_path = REPORTS_DIR / "pa_housing_monthly.csv"
@@ -95,6 +107,7 @@ def run(state: str = "PA") -> pd.DataFrame:
     raw = fetch_zhvi("county")
     long_df = to_long(filter_state(raw, state))
     summary = summarize(long_df)
+    summary = enrich_with_demographics(summary, get_demographics())
     load(long_df, summary)
     return summary
 
