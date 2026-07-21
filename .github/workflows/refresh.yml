@@ -24,6 +24,13 @@ jobs:
           cache: pip
       - name: Install
         run: pip install -e .
+      - name: Cache data/processed
+        uses: actions/cache@v4
+        with:
+          path: data/processed
+          key: data-cache-${{ github.run_id }}
+          restore-keys: |
+            data-cache-
       - name: Run pipeline
         env:
           CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
