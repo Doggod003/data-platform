@@ -2,6 +2,9 @@
 
 Python data & automation project.
 
+**Live dashboard:** [doggod003.github.io/data-platform](https://doggod003.github.io/data-platform/) —
+PA Housing Market Tracker, refreshed monthly by GitHub Actions.
+
 ## Structure
 
 ```
@@ -53,7 +56,8 @@ make run      # python -m data_platform
 The PA Housing pipeline (`src/data_platform/pipelines/housing.py`) writes to `reports/`:
 
 - `pa_housing_monthly.csv` / `pa_housing_summary.csv` — tidy long data and per-county summary
-- `pa_housing_dashboard.html` — self-contained interactive dashboard (Chart.js, no server needed)
+- `pa_housing_dashboard.html` — self-contained interactive dashboard (Chart.js, no server needed);
+  published live at [doggod003.github.io/data-platform](https://doggod003.github.io/data-platform/)
 - `powerbi/summary_enriched.csv` — summary + forensic flag columns (`implied_prior4yr`,
   `flag_severity`, `flag_test`, `flag_detail`) and a `momentum` column (Hot / Steady / Cooling
   by YoY%), so Power Query doesn't need to reimplement that logic
