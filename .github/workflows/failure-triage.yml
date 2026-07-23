@@ -90,6 +90,12 @@ jobs:
           BODY=$(printf '%s\n\n---\n**Run:** %s\n\n<details><summary>Last 400 lines of log</summary>\n\n```\n%s\n```\n</details>' \
             "$DIAGNOSIS" "$RUN_URL" "$(tail -c 60000 failure.trimmed.log)")
 
+          # Self-healing: create the label if it doesn't exist yet, so this workflow
+          # never depends on someone having set it up manually beforehand.
+          gh label create auto-triage --repo "${{ github.repository }}" \
+            --color "D93F0B" --description "Filed automatically by failure-triage.yml" \
+            --force >/dev/null 2>&1 || true
+
           EXISTING=$(gh issue list --repo "${{ github.repository }}" \
             --label auto-triage --state open --search "in:title \"$TITLE\"" \
             --json number --jq '.[0].number')
