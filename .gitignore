@@ -25,6 +25,8 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+# data/seeds/ is intentionally NOT ignored — versioned fallback snapshots
+# (e.g. osm_amenities_seed.csv) committed for when a live source is unreachable.
 
 # OS / editor
 .DS_Store

@@ -66,8 +66,8 @@ def test_fetch_county_amenities_success(mock_post):
 
 @patch("data_platform.integrations.osm_amenities.time.sleep")
 @patch("data_platform.integrations.osm_amenities.requests.post")
-def test_fetch_county_amenities_retries_on_5xx_then_succeeds(mock_post, mock_sleep):
-    busy = Mock(status_code=504)
+def test_fetch_county_amenities_retries_on5xx_then_succeeds(mock_post, mock_sleep):
+    busy = Mock(status_code=504, headers={})
     ok = Mock(status_code=200, json=Mock(return_value={"elements": SAMPLE_ELEMENTS}))
     mock_post.side_effect = [busy, ok]
 
@@ -81,10 +81,49 @@ def test_fetch_county_amenities_retries_on_5xx_then_succeeds(mock_post, mock_sle
 @patch("data_platform.integrations.osm_amenities.time.sleep")
 @patch("data_platform.integrations.osm_amenities.requests.post")
 def test_fetch_county_amenities_raises_after_max_attempts(mock_post, mock_sleep):
-    mock_post.return_value = Mock(status_code=504)
+    mock_post.return_value = Mock(status_code=504, headers={})
     with pytest.raises(RuntimeError, match="overloaded"):
         fetch_county_amenities("Dauphin County")
     assert mock_post.call_count == 3
+
+
+@patch("data_platform.integrations.osm_amenities.time.sleep")
+@patch("data_platform.integrations.osm_amenities.requests.post")
+def test_fetch_county_amenities_retries_on_429_then_succeeds(mock_post, mock_sleep):
+    rate_limited = Mock(status_code=429, headers={})
+    ok = Mock(status_code=200, json=Mock(return_value={"elements": SAMPLE_ELEMENTS}))
+    mock_post.side_effect = [rate_limited, ok]
+
+    result = fetch_county_amenities("Dauphin County")
+
+    assert len(result) == 5
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once()
+
+
+@patch("data_platform.integrations.osm_amenities.time.sleep")
+@patch("data_platform.integrations.osm_amenities.requests.post")
+def test_fetch_county_amenities_backoff_grows_across_attempts(mock_post, mock_sleep):
+    busy = Mock(status_code=504, headers={})
+    mock_post.return_value = busy
+
+    with pytest.raises(RuntimeError, match="overloaded"):
+        fetch_county_amenities("Dauphin County")
+
+    waits = [call.args[0] for call in mock_sleep.call_args_list]
+    assert waits == sorted(waits) and len(set(waits)) > 1  # strictly increasing, not flat
+
+
+@patch("data_platform.integrations.osm_amenities.time.sleep")
+@patch("data_platform.integrations.osm_amenities.requests.post")
+def test_fetch_county_amenities_honors_retry_after_header(mock_post, mock_sleep):
+    rate_limited = Mock(status_code=429, headers={"Retry-After": "17"})
+    ok = Mock(status_code=200, json=Mock(return_value={"elements": SAMPLE_ELEMENTS}))
+    mock_post.side_effect = [rate_limited, ok]
+
+    fetch_county_amenities("Dauphin County")
+
+    mock_sleep.assert_called_once_with(17.0)
 
 
 @patch("data_platform.integrations.osm_amenities.requests.post")
@@ -143,3 +182,33 @@ def test_get_amenities_uses_cache_when_fresh(mock_fetch, tmp_path):
 
     mock_fetch.assert_not_called()
     assert len(result) == 1
+
+
+@patch("data_platform.integrations.osm_amenities.is_stale", return_value=True)
+@patch("data_platform.integrations.osm_amenities.fetch_all_counties_amenities")
+def test_get_amenities_falls_back_to_stale_cache_on_fetch_failure(
+    mock_fetch, mock_is_stale, tmp_path
+):
+    cache_path = tmp_path / "amenities.csv"
+    pd.DataFrame(
+        [{"county": "Dauphin County", "category": "park", "sport": None, "name": "Old Park"}]
+    ).to_csv(cache_path, index=False)
+    mock_fetch.side_effect = RuntimeError("Overpass kept returning server errors")
+
+    result = get_amenities(cache_path=cache_path)
+
+    mock_fetch.assert_called_once()
+    assert len(result) == 1
+    assert result.iloc[0]["name"] == "Old Park"  # served from stale cache, not raised
+
+
+@patch("data_platform.integrations.osm_amenities.is_stale", return_value=True)
+@patch("data_platform.integrations.osm_amenities.fetch_all_counties_amenities")
+def test_get_amenities_raises_when_fetch_fails_and_no_cache_exists(
+    mock_fetch, mock_is_stale, tmp_path
+):
+    cache_path = tmp_path / "amenities.csv"  # never written — no cache exists
+    mock_fetch.side_effect = RuntimeError("Overpass kept returning server errors")
+
+    with pytest.raises(RuntimeError, match="server errors"):
+        get_amenities(cache_path=cache_path)

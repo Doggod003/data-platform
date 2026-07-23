@@ -11,7 +11,12 @@
       "Bash(grep -n \"top-mover-chip\\\\|region-link\\\\|Download\\\\|trend-card\\\\|downloads\" /tmp/dash_test.html | head -20)",
       "Read(//tmp/**)",
       "Bash(node --check dash_script.js)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import requests; print\\(requests.__version__\\)\")",
+      "Bash(git add *)",
+      "Bash(timeout 60 npm install jsdom --no-save --silent)",
+      "Bash(node -e \"require\\('jsdom'\\); console.log\\('jsdom OK'\\)\")",
+      "Bash(node dash_harness.js)"
     ],
     "additionalDirectories": [
       "/workspaces/data-platform",

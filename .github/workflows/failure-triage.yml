@@ -1,0 +1,102 @@
+name: Auto-Triage Failed Runs
+on:
+  workflow_run:
+    workflows: ["Monthly Refresh", "CI"]   # add other workflow names here as needed
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  triage:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download failed run's logs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          gh run view "$RUN_ID" --log-failed --repo "${{ github.repository }}" > failure.log || \
+          gh run view "$RUN_ID" --log --repo "${{ github.repository }}" > failure.log
+          # keep the payload bounded — last ~400 lines is plenty for a traceback + context
+          tail -n 400 failure.log > failure.trimmed.log
+
+      - name: Ask Claude to diagnose
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 - <<'PYEOF'
+          import json
+          import os
+          import urllib.request
+
+          with open("failure.trimmed.log") as f:
+              log = f.read()
+
+          workflow_name = os.environ.get("WORKFLOW_NAME", "unknown workflow")
+
+          prompt = f"""A GitHub Actions workflow called "{workflow_name}" failed.
+          Here are the last ~400 lines of its log:
+
+          {log}
+
+          In under 300 words: state the root cause (not just the surface error),
+          then give a specific, actionable suggested fix referencing the actual
+          file/function involved if the log shows one. If this looks like a
+          transient/external issue (rate limit, upstream outage) versus a real
+          code bug, say which. Do not pad with generic CI advice."""
+
+          body = {
+              "model": "claude-sonnet-5",
+              "max_tokens": 700,
+              "messages": [{"role": "user", "content": prompt}],
+          }
+          req = urllib.request.Request(
+              "https://api.anthropic.com/v1/messages",
+              data=json.dumps(body).encode(),
+              headers={
+                  "Content-Type": "application/json",
+                  "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                  "anthropic-version": "2023-06-01",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(req) as resp:
+              result = json.load(resp)
+
+          diagnosis = "".join(
+              block.get("text", "") for block in result.get("content", []) if block.get("type") == "text"
+          ) or "(Claude returned no diagnosis text — check the raw log.)"
+
+          with open("diagnosis.md", "w") as f:
+              f.write(diagnosis)
+          PYEOF
+        shell: bash
+        continue-on-error: true
+      - name: Set workflow name env
+        run: echo "WORKFLOW_NAME=${{ github.event.workflow_run.name }}" >> "$GITHUB_ENV"
+
+      - name: File or update triage issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="Auto-triage: ${{ github.event.workflow_run.name }} failed on ${{ github.event.workflow_run.head_branch }}"
+          RUN_URL="${{ github.event.workflow_run.html_url }}"
+          DIAGNOSIS="$(cat diagnosis.md 2>/dev/null || echo 'Diagnosis step did not run — see raw log below.')"
+
+          BODY=$(printf '%s\n\n---\n**Run:** %s\n\n<details><summary>Last 400 lines of log</summary>\n\n```\n%s\n```\n</details>' \
+            "$DIAGNOSIS" "$RUN_URL" "$(tail -c 60000 failure.trimmed.log)")
+
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --label auto-triage --state open --search "in:title \"$TITLE\"" \
+            --json number --jq '.[0].number')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" --body "$BODY"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title "$TITLE" --label auto-triage --body "$BODY"
+          fi
