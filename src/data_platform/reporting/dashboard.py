@@ -74,10 +74,16 @@ def build_dashboard(
     regional_df = regional_summary(tested)
     regional_df["slug"] = regional_df["pa_region"].map(slugify)
 
+    amenities_as_of = (
+        str(amenities["fetched_date"].iloc[0])
+        if "fetched_date" in amenities.columns and len(amenities)
+        else "unknown"
+    )
     meta = {
         "generated": date.today().isoformat(),
         "latest_date": str(summary["latest_date"].iloc[0]),
         "county_count": int(len(summary)),
+        "amenities_as_of": amenities_as_of,
     }
     regional = {
         "summary": _records(regional_df),
@@ -588,7 +594,7 @@ function renderCounty(slug){
 
     <div class="card spaced">
       <h3>Living Here &mdash; Amenities</h3>
-      <div class="hint">${row.total_amenities} total recreational amenities nearby (OpenStreetMap). Click a category to see names.</div>
+      <div class="hint">${row.total_amenities} total recreational amenities nearby. Amenities data as of ${META.amenities_as_of} (OpenStreetMap). Click a category to see names.</div>
       <div class="amenity-groups">${AMENITY_GROUPS.map(([label,cat,sport])=>
         amenityDetailsBlock(label, cat, sport, AMENITIES[row.region]||[])).join("")}</div>
     </div>

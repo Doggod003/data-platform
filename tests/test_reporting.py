@@ -118,18 +118,26 @@ def sample_monthly() -> pd.DataFrame:
 def sample_amenities() -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"county": "Forest County", "category": "park", "sport": None, "name": "Forest Park"},
+            {
+                "county": "Forest County",
+                "category": "park",
+                "sport": None,
+                "name": "Forest Park",
+                "fetched_date": "2026-07-01",
+            },
             {
                 "county": "Forest County",
                 "category": "pitch",
                 "sport": "baseball",
                 "name": "Forest Diamond",
+                "fetched_date": "2026-07-01",
             },
             {
                 "county": "Erie County",
                 "category": "golf_course",
                 "sport": None,
                 "name": "Erie Golf Club",
+                "fetched_date": "2026-07-01",
             },
         ]
     )
@@ -210,6 +218,15 @@ def test_build_dashboard_has_living_here_section(tmp_path):
     assert "Living Here" in content
     assert 'class="amenity-group"' in content
     assert "amenities_per_10k" in content  # Regions view card stat
+
+
+def test_build_dashboard_surfaces_amenities_provenance(tmp_path):
+    out = build_dashboard(
+        sample_summary(), sample_monthly(), sample_amenities(), tmp_path / "dash.html"
+    )
+    content = out.read_text(encoding="utf-8")
+    assert "Amenities data as of" in content
+    assert "2026-07-01" in content  # sample_amenities()'s fetched_date
 
 
 def test_build_dashboard_embeds_amenity_names(tmp_path):
